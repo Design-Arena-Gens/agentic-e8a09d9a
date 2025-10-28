@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Turbo Racer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        #gameContainer {
+            position: relative;
+            background: #2d3436;
+            border-radius: 10px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+
+        #gameCanvas {
+            display: block;
+            background: #34495e;
+        }
+
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            z-index: 10;
+        }
+
+        #speed {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            color: #fff;
+            font-size: 18px;
+            background: rgba(0,0,0,0.5);
+            padding: 10px 20px;
+            border-radius: 5px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+        }
+
+        #gameOver {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.9);
+            padding: 40px;
+            border-radius: 15px;
+            text-align: center;
+            display: none;
+            z-index: 20;
+        }
+
+        #gameOver h1 {
+            color: #e74c3c;
+            font-size: 48px;
+            margin-bottom: 20px;
+        }
+
+        #gameOver p {
+            color: #ecf0f1;
+            font-size: 24px;
+            margin-bottom: 30px;
+        }
+
+        #restartBtn {
+            background: #27ae60;
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        #restartBtn:hover {
+            background: #2ecc71;
+        }
+
+        #instructions {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: rgba(255,255,255,0.7);
+            font-size: 14px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="400" height="600"></canvas>
+        <div id="ui">
+            <div>Score: <span id="score">0</span></div>
+            <div>Distance: <span id="distance">0</span>m</div>
+        </div>
+        <div id="speed">
+            <div>Speed: <span id="speedValue">0</span> km/h</div>
+        </div>
+        <div id="instructions">
+            Use ← → Arrow Keys or A/D to move
+        </div>
+        <div id="gameOver">
+            <h1>GAME OVER</h1>
+            <p>Final Score: <span id="finalScore">0</span></p>
+            <p>Distance: <span id="finalDistance">0</span>m</p>
+            <button id="restartBtn">RESTART</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreElement = document.getElementById('score');
+        const distanceElement = document.getElementById('distance');
+        const speedValueElement = document.getElementById('speedValue');
+        const gameOverDiv = document.getElementById('gameOver');
+        const finalScoreElement = document.getElementById('finalScore');
+        const finalDistanceElement = document.getElementById('finalDistance');
+        const restartBtn = document.getElementById('restartBtn');
+
+        // Game variables
+        let gameRunning = true;
+        let score = 0;
+        let distance = 0;
+        let speed = 5;
+        let roadOffset = 0;
+        let frameCount = 0;
+
+        // Player car
+        const player = {
+            x: canvas.width / 2 - 25,
+            y: canvas.height - 120,
+            width: 50,
+            height: 90,
+            speed: 6
+        };
+
+        // Enemy cars
+        let enemyCars = [];
+        const enemyCarWidth = 50;
+        const enemyCarHeight = 90;
+        const lanes = [75, 175, 275];
+
+        // Keyboard input
+        const keys = {};
+        window.addEventListener('keydown', (e) => {
+            keys[e.key] = true;
+        });
+        window.addEventListener('keyup', (e) => {
+            keys[e.key] = false;
+        });
+
+        // Draw road
+        function drawRoad() {
+            // Road background
+            ctx.fillStyle = '#555';
+            ctx.fillRect(50, 0, 300, canvas.height);
+
+            // Road lines
+            ctx.fillStyle = '#fff';
+            const lineHeight = 40;
+            const lineGap = 20;
+
+            for (let i = -1; i < canvas.height / (lineHeight + lineGap) + 1; i++) {
+                const y = (i * (lineHeight + lineGap) + roadOffset) % (canvas.height + lineHeight + lineGap);
+
+                // Center lines
+                ctx.fillRect(195, y, 10, lineHeight);
+
+                // Side lines
+                ctx.fillRect(55, y, 5, lineHeight);
+                ctx.fillRect(340, y, 5, lineHeight);
+            }
+
+            // Move road
+            roadOffset += speed;
+            if (roadOffset > lineHeight + lineGap) {
+                roadOffset = 0;
+            }
+        }
+
+        // Draw car
+        function drawCar(x, y, color1, color2) {
+            // Car body
+            ctx.fillStyle = color1;
+            ctx.fillRect(x + 5, y + 20, 40, 60);
+
+            // Car top
+            ctx.fillStyle = color2;
+            ctx.fillRect(x + 10, y + 25, 30, 30);
+
+            // Wheels
+            ctx.fillStyle = '#000';
+            ctx.fillRect(x, y + 20, 8, 15);
+            ctx.fillRect(x + 42, y + 20, 8, 15);
+            ctx.fillRect(x, y + 65, 8, 15);
+            ctx.fillRect(x + 42, y + 65, 8, 15);
+
+            // Headlights
+            ctx.fillStyle = '#ffeb3b';
+            ctx.fillRect(x + 10, y + 75, 10, 5);
+            ctx.fillRect(x + 30, y + 75, 10, 5);
+        }
+
+        // Create enemy car
+        function createEnemyCar() {
+            const lane = lanes[Math.floor(Math.random() * lanes.length)];
+            const colors = [
+                ['#e74c3c', '#c0392b'],
+                ['#3498db', '#2980b9'],
+                ['#f39c12', '#d68910'],
+                ['#9b59b6', '#8e44ad'],
+                ['#1abc9c', '#16a085']
+            ];
+            const colorSet = colors[Math.floor(Math.random() * colors.length)];
+
+            enemyCars.push({
+                x: lane,
+                y: -enemyCarHeight,
+                color1: colorSet[0],
+                color2: colorSet[1]
+            });
+        }
+
+        // Update enemy cars
+        function updateEnemyCars() {
+            // Spawn new enemy cars
+            if (frameCount % 60 === 0) {
+                createEnemyCar();
+            }
+
+            // Move and draw enemy cars
+            for (let i = enemyCars.length - 1; i >= 0; i--) {
+                const enemy = enemyCars[i];
+                enemy.y += speed;
+
+                // Remove off-screen cars
+                if (enemy.y > canvas.height) {
+                    enemyCars.splice(i, 1);
+                    score += 10;
+                    continue;
+                }
+
+                // Draw enemy car
+                drawCar(enemy.x, enemy.y, enemy.color1, enemy.color2);
+
+                // Collision detection
+                if (checkCollision(player, enemy)) {
+                    gameOver();
+                }
+            }
+        }
+
+        // Check collision
+        function checkCollision(car1, car2) {
+            return car1.x < car2.x + enemyCarWidth &&
+                   car1.x + car1.width > car2.x &&
+                   car1.y < car2.y + enemyCarHeight &&
+                   car1.y + car1.height > car2.y;
+        }
+
+        // Update player
+        function updatePlayer() {
+            // Move left
+            if ((keys['ArrowLeft'] || keys['a'] || keys['A']) && player.x > 60) {
+                player.x -= player.speed;
+            }
+            // Move right
+            if ((keys['ArrowRight'] || keys['d'] || keys['D']) && player.x < 290) {
+                player.x += player.speed;
+            }
+
+            // Draw player car
+            drawCar(player.x, player.y, '#2ecc71', '#27ae60');
+        }
+
+        // Update game
+        function update() {
+            if (!gameRunning) return;
+
+            frameCount++;
+            distance += Math.floor(speed / 10);
+
+            // Increase difficulty over time
+            if (frameCount % 300 === 0) {
+                speed += 0.5;
+            }
+
+            // Update UI
+            scoreElement.textContent = score;
+            distanceElement.textContent = distance;
+            speedValueElement.textContent = Math.floor(speed * 20);
+
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw game elements
+            drawRoad();
+            updateEnemyCars();
+            updatePlayer();
+
+            requestAnimationFrame(update);
+        }
+
+        // Game over
+        function gameOver() {
+            gameRunning = false;
+            finalScoreElement.textContent = score;
+            finalDistanceElement.textContent = distance;
+            gameOverDiv.style.display = 'block';
+        }
+
+        // Restart game
+        function restart() {
+            gameRunning = true;
+            score = 0;
+            distance = 0;
+            speed = 5;
+            roadOffset = 0;
+            frameCount = 0;
+            enemyCars = [];
+            player.x = canvas.width / 2 - 25;
+            gameOverDiv.style.display = 'none';
+            update();
+        }
+
+        restartBtn.addEventListener('click', restart);
+
+        // Start game
+        update();
+    </script>
+</body>
+</html>
